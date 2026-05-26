@@ -1,0 +1,79 @@
+import requests
+import pandas as pd
+import yfinance as yf
+
+API_KEY = "PASTE_YOUR_FMP_KEY_HERE"
+TICKERS = ["AAPL", "MSFT", "GOOG", "TSLA", "AMZN", "NVDA", "META"]
+
+def get_json(url: str):
+    response = requests.get(url, timeout=30)
+    response.raise_for_status()
+    return response.json()
+
+rows = []
+
+for ticker in TICKERS:
+    profile_url = f"https://financialmodelingprep.com/stable/profile?symbol={ticker}&apikey={API_KEY}"
+
+    try:
+        profile_data = get_json(profile_url)
+    except Exception as e:
+        print(f"Profile failed for {ticker}: {e}")
+        continue
+
+    if not profile_data:
+        print(f"No profile data for {ticker}")
+        continue
+
+    profile = profile_data[0]
+
+    company_name = profile.get("companyName")
+    sector = profile.get("sector")
+    price = profile.get("price")
+    market_cap = profile.get("marketCap") or profile.get("mktCap")
+
+    eps_ttm = None
+    pe_ratio = None
+
+    try:
+        yf_ticker = yf.Ticker(ticker)
+        info = yf_ticker.info
+
+        eps_ttm = info.get("trailingEps")
+        pe_ratio = info.get("trailingPE")
+    except Exception as e:
+        print(f"yfinance failed for {ticker}: {e}")
+
+    pe_assumption = 15
+    intrinsic_value = None
+    margin_of_safety_pct = None
+    valuation_label = None
+
+    if eps_ttm is not None and price not in (None, 0):
+        intrinsic_value = eps_ttm * pe_assumption
+        margin_of_safety_pct = (intrinsic_value - price) / price
+
+        if intrinsic_value > price:
+            valuation_label = "Undervalued"
+        else:
+            valuation_label = "Overvalued"
+
+    rows.append({
+        "ticker": ticker,
+        "company_name": company_name,
+        "sector": sector,
+        "price": price,
+        "market_cap": market_cap,
+        "eps_ttm": eps_ttm,
+        "trailing_pe": pe_ratio,
+        "pe_assumption": pe_assumption,
+        "intrinsic_value": intrinsic_value,
+        "margin_of_safety_pct": margin_of_safety_pct,
+        "valuation_label": valuation_label
+    })
+
+df = pd.DataFrame(rows)
+
+print(df)
+df.to_csv("value_investing_dashboard_data.csv", index=False)
+print("Saved to value_investing_dashboard_data.csv")
